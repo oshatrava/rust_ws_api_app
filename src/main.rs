@@ -1,7 +1,7 @@
-mod handlers;
-mod model;
-mod schema;
+mod log;
+mod db;
 mod route;
+mod handlers;
 
 use std::collections::{HashMap, HashSet};
 use std::{net::SocketAddr, sync::Mutex};
@@ -13,16 +13,17 @@ use axum::http::{
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE}, 
 };
 use tokio::sync::broadcast;
-use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use sqlx::{Pool, Postgres};
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
 
 use route::create_router;
+use db::setup_database;
+use log::setup_tracing;
 
-pub struct AppState {
+struct AppState {
     db: Pool<Postgres>,
     rooms: Mutex<HashMap<String, RoomState>>,
 }
@@ -37,41 +38,6 @@ impl RoomState {
         Self {
             users: Mutex::new(HashSet::new()),
             tx: broadcast::channel(69).0,
-        }
-    }
-}
-
-fn setup_tracing() {
-    let mut layers = Vec::new();
-
-    if true {
-        let stdout_log = tracing_subscriber::fmt::layer()
-            .pretty()
-            .with_filter(filter::LevelFilter::DEBUG)
-            .boxed();
-        layers.push(stdout_log);
-    }
-
-    tracing_subscriber::registry()
-        .with(layers)
-        .init();
-}
-
-async fn setup_database() -> Pool<Postgres> {
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set!");
-    let pg_connection = PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&database_url)
-        .await;
-    
-    match pg_connection {
-        Ok(pool) => {
-            tracing::info!("✅ Connection to the database is successful!");
-            pool
-        }
-        Err(err) => {
-            tracing::error!("🔥 Failed to connect to the database: {:?}", err);
-            std::process::exit(1);
         }
     }
 }

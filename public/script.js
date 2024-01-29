@@ -49,7 +49,8 @@ sendBtn.addEventListener('click', () => {
     }
     ws.send(JSON.stringify({
         username: message,
-        channel: "root",
+        channel: 'root',
+        message: message
     }));
     input.value = "";
 })
