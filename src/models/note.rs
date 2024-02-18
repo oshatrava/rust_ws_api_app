@@ -2,24 +2,18 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-#[derive(Deserialize, Debug)]
-pub struct Pagination {
-    pub page: usize,
-    pub limit: usize,
-}
-
-impl Default for Pagination {
-    fn default() -> Self {
-        Self { 
-            page: 1,
-            limit: 10,
-        }
-    }
-}
-
-#[derive(Deserialize, Debug)]
-pub struct ParamOptions {
-    pub id: uuid::Uuid,
+#[allow(non_snake_case)]
+#[derive(Debug, FromRow, Deserialize, Serialize)]
+pub struct NoteModel {
+    pub id: Uuid,
+    pub title: String,
+    pub content: String,
+    pub category: Option<String>,
+    pub published: Option<bool>,
+    #[serde(rename = "createdAt")]
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,16 +34,17 @@ pub struct UpdateNoteSchema {
     pub published: Option<bool>,
 }
 
-#[allow(non_snake_case)]
-#[derive(Debug, FromRow, Deserialize, Serialize)]
-pub struct NoteModel {
-    pub id: Uuid,
-    pub title: String,
-    pub content: String,
-    pub category: Option<String>,
-    pub published: Option<bool>,
-    #[serde(rename = "createdAt")]
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(rename = "updatedAt")]
-    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+#[derive(Deserialize, Debug)]
+pub struct Pagination {
+    pub page: usize,
+    pub limit: usize,
+}
+
+impl Default for Pagination {
+    fn default() -> Self {
+        Self { 
+            page: 1,
+            limit: 10,
+        }
+    }
 }

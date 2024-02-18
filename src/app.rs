@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use dotenv::dotenv;
 use axum::http::header;
 use axum::Router;
 use sqlx::{Pool, Postgres};
@@ -10,11 +11,14 @@ use crate::logger;
 use crate::database;
 use crate::routes;
 
+#[derive(Clone)]
 pub struct AppState {
     pub db: Pool<Postgres>,
 }
 
 pub async fn create_app() -> Router {
+    dotenv().ok();
+
     logger::setup();
 
     let db_pool = database::setup().await;
@@ -24,9 +28,20 @@ pub async fn create_app() -> Router {
     };
 
     Router::new()
-        .merge(routes::notes::create_router())
-        .merge(routes::rooms::create_router())
-        .with_state(Arc::new(app_state))
+        .merge(routes::health::create_router())
+        .merge(Router::new().nest(
+            "/auth", 
+            Router::new()
+                .merge(routes::auth::create_router())
+                .with_state(Arc::new(app_state.clone())),
+        ))
+        .merge(Router::new().nest(
+            "/api/v1",
+            Router::new()
+                .merge(routes::notes::create_router())
+                .merge(routes::rooms::create_router())
+                .with_state(Arc::new(app_state.clone())),
+        ))
         .layer(
             trace::TraceLayer::new_for_http()
                 .make_span_with(trace::DefaultMakeSpan::new().include_headers(true))

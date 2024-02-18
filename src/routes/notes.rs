@@ -10,25 +10,15 @@ use axum::{
 };
 
 use crate::app::AppState;
-use crate::models::note::{CreateNoteSchema, NoteModel, Pagination, UpdateNoteSchema};
+use crate::models::note::{NoteModel, CreateNoteSchema, UpdateNoteSchema, Pagination};
 
 pub fn create_router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/health-check", get(health_check_handler))
         .route("/notes/", post(create_notes))
         .route("/notes", get(get_notes))
         .route("/notes/:id", get(get_note_by_id))
         .route("/notes/:id", patch(update_note_by_id))
         .route("/notes/:id", delete(delete_note_by_id))
-}
-
-async fn health_check_handler() -> impl IntoResponse {
-    let json_response = json!({
-        "status": "success",
-        "message": "It works!",
-    });
-
-    Json(json_response)
 }
 
 async fn get_notes(
@@ -40,7 +30,7 @@ async fn get_notes(
     let limit = opts.limit;
     let offset = (opts.page - 1) * limit;
 
-    let query_result = sqlx::query_as!(
+    let notes = sqlx::query_as!(
         NoteModel,
         "SELECT * FROM notes ORDER by id LIMIT $1 OFFSET $2",
         limit as i32,
@@ -49,23 +39,24 @@ async fn get_notes(
     .fetch_all(&data.db)
     .await;
 
-    if query_result.is_err() {
-        let error_response = json!({
-            "status": "error",
-            "message": "Something bad happened while fetching all note items",
-        });
+    match notes {
+        Ok(notes) => {
+            let response = json!({
+                "status": "success",
+                "data": notes,
+            });
+        
+            Ok(Json(response))
+        }
+        Err(_) => {
+            let error = json!({
+                "status": "error",
+                "message": "Something bad happened while fetching all note items",
+            });
 
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)));
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error)))
+        }
     }
-
-    let notes = query_result.unwrap();
-
-    let response = json!({
-        "status": "success",
-        "data": notes,
-    });
-
-    Ok(Json(response))
 }
 
 async fn create_notes(
@@ -118,7 +109,7 @@ async fn get_note_by_id(
     Path(id): Path<uuid::Uuid>,
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query_result = sqlx::query_as!(NoteModel, "SELECT * FROM notes WHERE id = $1", id,)
+    let note = sqlx::query_as!(NoteModel, "SELECT * FROM notes WHERE id = $1", id,)
         .fetch_one(&data.db)
         .await
         .map_err(|err| {
@@ -130,7 +121,7 @@ async fn get_note_by_id(
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
         });
 
-    match query_result {
+    match note {
         Ok(note) => {
             let response = json!({
                 "status": "success",
@@ -140,12 +131,12 @@ async fn get_note_by_id(
             Ok(Json(response))
         }
         Err(_) => {
-            let error_response = json!({
+            let error = json!({
                 "status": "error",
                 "message": format!("Note with ID: {:?} not found", id),
             });
 
-            Err((StatusCode::NOT_FOUND, Json(error_response)))
+            Err((StatusCode::NOT_FOUND, Json(error)))
         }
     }
 }
@@ -155,23 +146,23 @@ async fn update_note_by_id(
     State(data): State<Arc<AppState>>,
     Json(body): Json<UpdateNoteSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query_result = sqlx::query_as!(NoteModel, "SELECT * FROM notes WHERE id = $1", id,)
+    let note = sqlx::query_as!(NoteModel, "SELECT * FROM notes WHERE id = $1", id,)
         .fetch_one(&data.db)
         .await;
-
-    if query_result.is_err() {
-        let error_response = json!({
+    
+    if note.is_err() {
+        let error = json!({
             "status": "error",
             "messsage": format!("Note with ID: {} not found", id),
         });
 
-        return Err((StatusCode::NOT_FOUND, Json(error_response)));
+        return Err((StatusCode::NOT_FOUND, Json(error)));
     }
 
-    let note = query_result.unwrap();
+    let note = note.unwrap();
     let now = chrono::Utc::now();
 
-    let query_result = sqlx::query_as!(
+    let note = sqlx::query_as!(
         NoteModel,
         "UPDATE notes SET title = $1, content = $2, category = $3, published = $4, updated_at = $5 WHERE id = $6 RETURNING *",
         body.title.to_owned().unwrap_or(note.title),
@@ -184,7 +175,7 @@ async fn update_note_by_id(
     .fetch_one(&data.db)
     .await;
 
-    match query_result {
+    match note {
         Ok(note) => {
             let response = json!({
                 "status": "success",
@@ -194,12 +185,12 @@ async fn update_note_by_id(
             Ok(Json(response))
         }
         Err(err) => {
-            let error_response = json!({
+            let error = json!({
                 "status": "error",
                 "messsage": format!("{:?}", err)
             });
 
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)))
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error)))
         }
     }
 }
@@ -208,18 +199,18 @@ async fn delete_note_by_id(
     Path(id): Path<uuid::Uuid>,
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query_result = sqlx::query_as!(NoteModel, "DELETE FROM notes WHERE id = $1", id,)
+    let result = sqlx::query_as!(NoteModel, "DELETE FROM notes WHERE id = $1", id,)
         .execute(&data.db)
         .await;
 
-    let rows_affected = query_result.unwrap().rows_affected();
+    let rows_affected = result.unwrap().rows_affected();
     if rows_affected == 0 {
-        let error_response = json!({
+        let error = json!({
             "status": "error",
             "message": format!("Note with ID: {} not found", id),
         });
 
-        return Err((StatusCode::NOT_FOUND, Json(error_response)));
+        return Err((StatusCode::NOT_FOUND, Json(error)));
     }
 
     let response = json!({
