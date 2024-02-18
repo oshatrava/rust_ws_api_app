@@ -1,20 +1,28 @@
 use std::sync::Arc;
-
+use serde_json::json;
 use axum::{
+    Router,
+    routing::{get, post, patch, delete},
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use serde_json::json;
 
-use crate::{
-    db::note_model::NoteModel,
-    db::note_schema::{CreateNoteSchema, Pagination, UpdateNoteSchema},
-    AppState,
-};
+use crate::app::AppState;
+use crate::models::note::{CreateNoteSchema, NoteModel, Pagination, UpdateNoteSchema};
 
-pub async fn health_check_handler() -> impl IntoResponse {
+pub fn create_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/health-check", get(health_check_handler))
+        .route("/notes/", post(create_notes))
+        .route("/notes", get(get_notes))
+        .route("/notes/:id", get(get_note_by_id))
+        .route("/notes/:id", patch(update_note_by_id))
+        .route("/notes/:id", delete(delete_note_by_id))
+}
+
+async fn health_check_handler() -> impl IntoResponse {
     let json_response = json!({
         "status": "success",
         "message": "It works!",
@@ -23,9 +31,9 @@ pub async fn health_check_handler() -> impl IntoResponse {
     Json(json_response)
 }
 
-pub async fn list_note_handler(
+async fn get_notes(
     opts: Option<Query<Pagination>>,
-    State(data): State<Arc<AppState>>
+    State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let Query(opts) = opts.unwrap_or_default();
 
@@ -60,7 +68,7 @@ pub async fn list_note_handler(
     Ok(Json(response))
 }
 
-pub async fn create_note_handler(
+async fn create_notes(
     State(data): State<Arc<AppState>>,
     Json(body): Json<CreateNoteSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
@@ -81,22 +89,19 @@ pub async fn create_note_handler(
                 "data": note,
             });
 
-            Ok((
-                StatusCode::CREATED, 
-                Json(response)
-            ))
+            Ok((StatusCode::CREATED, Json(response)))
         }
         Err(err) => {
-            if err.to_string().contains("duplicate key value violates unique constraint") {
+            if err
+                .to_string()
+                .contains("duplicate key value violates unique constraint")
+            {
                 let error_response = json!({
                     "status": "error",
                     "message": "Note with that title already exists",
                 });
 
-                return Err((
-                    StatusCode::CONFLICT,
-                    Json(error_response),
-                ));
+                return Err((StatusCode::CONFLICT, Json(error_response)));
             }
 
             let error_response = json!({
@@ -104,33 +109,26 @@ pub async fn create_note_handler(
                 "message": format!("{:?}", err),
             });
 
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error_response),
-            ))
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)))
         }
     }
 }
 
-pub async fn get_note_handler(
+async fn get_note_by_id(
     Path(id): Path<uuid::Uuid>,
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query_result = sqlx::query_as!(
-        NoteModel,
-        "SELECT * FROM notes WHERE id = $1",
-        id,
-    )
-    .fetch_one(&data.db)
-    .await
-    .map_err(|err| {
-        let error_response = json!({
-            "status": "error",
-            "message": format!("Database error: {}", err),
-        });
+    let query_result = sqlx::query_as!(NoteModel, "SELECT * FROM notes WHERE id = $1", id,)
+        .fetch_one(&data.db)
+        .await
+        .map_err(|err| {
+            let error_response = json!({
+                "status": "error",
+                "message": format!("Database error: {}", err),
+            });
 
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
-    });
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
+        });
 
     match query_result {
         Ok(note) => {
@@ -152,18 +150,14 @@ pub async fn get_note_handler(
     }
 }
 
-pub async fn edit_note_handler(
+async fn update_note_by_id(
     Path(id): Path<uuid::Uuid>,
     State(data): State<Arc<AppState>>,
     Json(body): Json<UpdateNoteSchema>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query_result = sqlx::query_as!(
-        NoteModel,
-        "SELECT * FROM notes WHERE id = $1",
-        id,
-    )
-    .fetch_one(&data.db)
-    .await;
+    let query_result = sqlx::query_as!(NoteModel, "SELECT * FROM notes WHERE id = $1", id,)
+        .fetch_one(&data.db)
+        .await;
 
     if query_result.is_err() {
         let error_response = json!({
@@ -210,17 +204,13 @@ pub async fn edit_note_handler(
     }
 }
 
-pub async fn delete_note_handler(
+async fn delete_note_by_id(
     Path(id): Path<uuid::Uuid>,
     State(data): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let query_result = sqlx::query_as!(
-        NoteModel,
-        "DELETE FROM notes WHERE id = $1",
-        id,
-    )
-    .execute(&data.db)
-    .await;
+    let query_result = sqlx::query_as!(NoteModel, "DELETE FROM notes WHERE id = $1", id,)
+        .execute(&data.db)
+        .await;
 
     let rows_affected = query_result.unwrap().rows_affected();
     if rows_affected == 0 {
@@ -235,6 +225,6 @@ pub async fn delete_note_handler(
     let response = json!({
         "status": "success",
     });
-    
+
     Ok(Json(response))
 }
