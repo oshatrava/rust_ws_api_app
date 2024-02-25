@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use dotenv::dotenv;
 use axum::http::header;
 use axum::Router;
 use sqlx::{Pool, Postgres};
@@ -7,6 +6,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::sensitive_headers::SetSensitiveHeadersLayer;
 use tower_http::trace;
 
+use crate::app_config::AppConfig;
 use crate::logger;
 use crate::database;
 use crate::routes;
@@ -16,12 +16,10 @@ pub struct AppState {
     pub db: Pool<Postgres>,
 }
 
-pub async fn create_app() -> Router {
-    dotenv().ok();
+pub async fn create_app(config: &AppConfig) -> Router {
+    logger::init();
 
-    logger::setup();
-
-    let db_pool = database::setup().await;
+    let db_pool = database::init(config.get_database_url()).await;
 
     let app_state = AppState {
         db: db_pool,

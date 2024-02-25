@@ -1,6 +1,7 @@
 use tracing::info;
 
 mod app;
+mod app_config;
 mod database;
 mod logger;
 mod models;
@@ -9,12 +10,13 @@ mod utils;
 
 #[tokio::main]
 async fn main() {
-    let app: axum::Router = app::create_app().await;
+    let config = app_config::AppConfig::new();
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8000".to_string());    
+    let app: axum::Router = app::create_app(&config).await;
+
     let addr = std::net::SocketAddr::new(
         [127, 0, 0, 1].into(), 
-        port.parse().expect("Failed to parse port")
+        config.get_port(),
     );
 
     let listener = tokio::net::TcpListener::bind(addr)

@@ -1,13 +1,14 @@
-use std::env;
+use tracing::info;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
-pub async fn setup() -> Pool<Postgres> {
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set!");
-    let pool = PgPoolOptions::new()
+pub async fn init(database_url: &str) -> Pool<Postgres> {
+    let pg_poll = PgPoolOptions::new()
         .max_connections(10)
-        .connect(&database_url)
+        .connect(database_url)
         .await
-        .unwrap_or_else(|e| panic!("Failed to connect to the database: {}", e.to_string()));
+        .unwrap_or_else(|err| panic!("Failed to connect to the database: {}", err));
 
-    return pool;
+    info!("Connected to the database");
+
+    pg_poll
 }
